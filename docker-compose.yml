@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  # Shard 1 - Users (Master-Slave)
+  mysql-shard1-master:
+    image: mysql:8.0
+    container_name: mysql-shard1-master
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: shard1_users
+      MYSQL_USER: sharduser
+      MYSQL_PASSWORD: shardpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init-scripts:/docker-entrypoint-initdb.d
+      - shard1_master_data:/var/lib/mysql
+    command: --server-id=1 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=ON --enforce-gtid-consistency=ON
+    networks:
+      - sharding-network
+
+  mysql-shard1-slave:
+    image: mysql:8.0
+    container_name: mysql-shard1-slave
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: shard1_users
+      MYSQL_USER: sharduser
+      MYSQL_PASSWORD: shardpass
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./init-scripts:/docker-entrypoint-initdb.d
+      - shard1_slave_data:/var/lib/mysql
+    command: --server-id=2 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=ON --enforce-gtid-consistency=ON
+    depends_on:
+      - mysql-shard1-master
+    networks:
+      - sharding-network
+
+  # Shard 2 - Books (Master-Slave)
+  mysql-shard2-master:
+    image: mysql:8.0
+    container_name: mysql-shard2-master
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: shard2_books
+      MYSQL_USER: sharduser
+      MYSQL_PASSWORD: shardpass
+    ports:
+      - "3308:3306"
+    volumes:
+      - ./init-scripts:/docker-entrypoint-initdb.d
+      - shard2_master_data:/var/lib/mysql
+    command: --server-id=3 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=ON --enforce-gtid-consistency=ON
+    networks:
+      - sharding-network
+
+  mysql-shard2-slave:
+    image: mysql:8.0
+    container_name: mysql-shard2-slave
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: shard2_books
+      MYSQL_USER: sharduser
+      MYSQL_PASSWORD: shardpass
+    ports:
+      - "3309:3306"
+    volumes:
+      - ./init-scripts:/docker-entrypoint-initdb.d
+      - shard2_slave_data:/var/lib/mysql
+    command: --server-id=4 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=ON --enforce-gtid-consistency=ON
+    depends_on:
+      - mysql-shard2-master
+    networks:
+      - sharding-network
+
+  # Shard 3 - Stores (Read-Only Replica)
+  mysql-shard3:
+    image: mysql:8.0
+    container_name: mysql-shard3
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: shard3_stores
+      MYSQL_USER: sharduser
+      MYSQL_PASSWORD: shardpass
+    ports:
+      - "3310:3306"
+    volumes:
+      - ./init-scripts:/docker-entrypoint-initdb.d
+      - shard3_data:/var/lib/mysql
+    command: --server-id=5 --read-only=1
+    networks:
+      - sharding-network
+
+  # Sharding Router (ProxySQL)
+  proxysql:
+    image: proxysql/proxysql:2.5.5
+    container_name: proxysql-router
+    ports:
+      - "6033:6033"  # Admin interface
+      - "6032:6032"  # MySQL interface
+    volumes:
+      - ./proxysql.cnf:/etc/proxysql.cnf
+      - proxysql_data:/var/lib/proxysql
+    depends_on:
+      - mysql-shard1-master
+      - mysql-shard1-slave
+      - mysql-shard2-master
+      - mysql-shard2-slave
+      - mysql-shard3
+    networks:
+      - sharding-network
+
+volumes:
+  shard1_master_data:
+  shard1_slave_data:
+  shard2_master_data:
+  shard2_slave_data:
+  shard3_data:
+  proxysql_data:
+
+networks:
+  sharding-network:
+    driver: bridge
